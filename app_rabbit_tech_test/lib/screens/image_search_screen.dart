@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/image_service.dart';
 
@@ -21,6 +22,10 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
   bool _hasMore = true;
   String _currentQuery = 'dogs';
 
+  Timer? _searchDebounce;
+  Timer? _scrollDebounce;
+  bool _isLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -30,13 +35,15 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _scrollDebounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   Future<void> _loadImages() async {
-    if (_isLoading || !_hasMore) return;
+    if (_isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -54,6 +61,7 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
     } catch (e) {
       setState(() {
         _isLoading = false;
+        _isLoadingMore = false;
       });
       _showError(e.toString());
       }
@@ -62,21 +70,53 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
     void _onScroll() {
       if (_scrollController.position.pixels >= 
           _scrollController.position.maxScrollExtent - 200) {
-            _loadImages();
+
+            _scrollDebounce?.cancel();
+            _scrollDebounce = Timer(const Duration(milliseconds: 300), () {
+              _loadMoreImages();
+            });
           }
     }
 
-    void _onSearch(String query) {
-      if (query.isEmpty) return;
+    void _loadMoreImages(){
+      if (_isLoadingMore || !_hasMore || _isLoading) return;
 
+      setState(() {
+        _isLoadingMore = true;
+      });
+
+      _loadImages();
+    }
+
+    void _onSearchChanged(String value) {
+      _searchDebounce?.cancel();
+
+      _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+        if (value.isNotEmpty && value != _currentQuery) 
+        {
+          _performSearch(value);
+        }
+      });
+    }
+
+    void _performSearch(String query) {
       setState(() {
         _currentQuery = query;
         _images.clear();
         _currentPage = 1;
         _hasMore = true;
+        _isLoading = false;
+        _isLoadingMore = false;
       });
 
       _loadImages();
+    }
+
+    void _onSearchSubmitted(String query) {
+      _searchDebounce?.cancel();
+      if (query.isNotEmpty) {
+        _performSearch(query);
+      }
     }
 
     Future<void> _onRefresh() async {
@@ -146,8 +186,8 @@ class _ImageSearchScreenState extends State<ImageSearchScreen> {
             ),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
-          onSubmitted: _onSearch,
-          onChanged: (value) => setState(() {}),
+          onSubmitted: _onSearchSubmitted,
+          onChanged: _onSearchChanged,
         ),
       );
     }
